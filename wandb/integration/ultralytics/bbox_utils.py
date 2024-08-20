@@ -38,7 +38,7 @@ def get_ground_truth_bbox_annotations(
     """Get ground truth bounding box annotation data in the form required for `wandb.Image` overlay system."""
     indices = batch["batch_idx"] == img_idx
     bboxes = batch["bboxes"][indices]
-    cls_labels = batch["cls"][indices].squeeze(1).tolist()
+    cls_labels = get_cls_labels(batch, indices)
 
     class_name_map_reverse = {v: k for k, v in class_name_map.items()}
 
@@ -48,8 +48,8 @@ def get_ground_truth_bbox_annotations(
         )
         return None
 
-    cls_labels = batch["cls"][indices].squeeze(1).tolist()
-    if class_name_map:
+    cls_labels = get_cls_labels(batch, indices)
+    if class_name_map and cls_labels:
         cls_labels = [str(class_name_map[label]) for label in cls_labels]
 
     original_image_shape = batch["ori_shape"][img_idx]
@@ -57,22 +57,23 @@ def get_ground_truth_bbox_annotations(
     ratio_pad = batch["ratio_pad"][img_idx]
 
     data = []
-    for box, label in zip(bboxes, cls_labels):
-        box = scale_bounding_box_to_original_image_shape(
-            box, resized_image_shape, original_image_shape, ratio_pad
-        )
-        data.append(
-            {
-                "position": {
-                    "middle": [int(box[0]), int(box[1])],
-                    "width": int(box[2]),
-                    "height": int(box[3]),
-                },
-                "domain": "pixel",
-                "class_id": class_name_map_reverse[label],
-                "box_caption": label,
-            }
-        )
+    if cls_labels:
+        for box, label in zip(bboxes, cls_labels):
+            box = scale_bounding_box_to_original_image_shape(
+                box, resized_image_shape, original_image_shape, ratio_pad
+            )
+            data.append(
+                {
+                    "position": {
+                        "middle": [int(box[0]), int(box[1])],
+                        "width": int(box[2]),
+                        "height": int(box[3]),
+                    },
+                    "domain": "pixel",
+                    "class_id": class_name_map_reverse[label],
+                    "box_caption": label,
+                }
+            )
 
     return data
 
@@ -206,3 +207,10 @@ def plot_detection_validation_results(
         if batch_idx + 1 == max_validation_batches:
             break
     return table
+
+
+def get_cls_labels(batch, indices):
+    try:
+        return batch["cls"][indices].squeeze(1).tolist()
+    except IndexError:
+        return None
